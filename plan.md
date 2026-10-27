@@ -77,7 +77,7 @@ cache_path: cache/llm_cache.sqlite
 | 闲聊中带同主题词的比例 | 0.5 | 制造"看起来相关、实际无关"的候选 |
 | 固定脚本集 | 每个验证用户 50 个、每个测试用户 100 个 session 脚本 | 测试共 2,000 个，所有方法在同一组上评估 |
 | 训练脚本 | 不预先固定：模拟器训练时每次 `reset` 从训练用户现场生成一个新脚本 | 无限多样，避免过拟合到固定脚本 |
-| 日志收集脚本 | 从训练用户预先生成 3,000 个，固定下来 | 两种模式各 1,500 |
+| 日志收集脚本 | 从训练用户预先生成 3,000 个，固定下来；**长度混合**，T 从 {8, 12, 16, 20} 均匀抽 | 两种模式各 1,500。混合长度是为了让行为模型见过 E3 要扫到的长 session（见 F8） |
 | 世界 seed | 0 | 再跑一个 seed=1 的世界作稳健性检查（可选） |
 
 ### 1.5 过时比例的定义
@@ -91,7 +91,7 @@ p_stale = **会变事实在 session 开始时已有至少一个历史版本的�
 δ = 1.0，α = 0.3，β = 1.5，λ = 0.002 / token（同原文档）。补充定死：
 
 - 只有提问轮有 r_quality 和 r_stale；闲聊和更新轮这两项为 0。
-- n_m 用**本轮打分之前**的提及次数，打分之后再加 1。
+- n_m 是该 memory 此前的**无关提及**次数（状态里的 `intrusions` 计数，见 C8），用本轮打分之前的值，打分之后再加 1。
 - token 项按"本轮结束时在上下文中的全部 memory"计：持久模式 = 已在上下文 ∪ 本轮注入；一次性模式 = 本轮注入。
 - 折扣：报告里的 session 回报一律是**不折扣的总和**（γ 只是训练超参），否则不同 γ 的回报不可比。
 
@@ -267,7 +267,7 @@ def build_messages(history, turn, chosen, mode) -> list[dict]:
 ### 3.7 env/state.py、features.py、gate_env.py
 
 - `SessionState` 在 sim 训练里**原地更新**（`advance_` 带下划线），只有 `fork()` 才 deepcopy。原文档里 `st = advance(st, ...)` 若每步都复制，30 万步会明显变慢。
-- `advance_` 依次：记录本轮候选出现次数 → 更新 mentions（用 Outcome.mentioned_ids）→ 持久模式把 chosen 加进 in_context / 一次性模式清空后只放本轮（仅用于本轮计费）→ 更新轮把 new_record 写进 store → 更新 conflict_flag → t += 1。
+- `advance_` 依次：记录本轮候选出现次数 → 更新 `mentions`（用 Outcome.mentioned_ids）和 `intrusions`（用 Outcome.intrusion_ids）→ 持久模式把 chosen 加进 in_context / 一次性模式清空后只放本轮（仅用于本轮计费）→ 更新轮把 new_record 写进 store → 更新 conflict_flag → t += 1。
 - `terminated = (t == T)`，`truncated = False`。时间在状态里，所以这是真正的终止，不是截断。
 - `observation_space = Box(-1, 1, (50,), float32)`；`_obs()` 最后 `np.clip`，并 assert 无 NaN。
 - live 后端在环境里只用于小规模调试；大批量真实调用一律走 runner（并发）。
@@ -295,7 +295,7 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 | 6 | 闲聊（与 R 同主题） | |
 | 7 | 提问 K | |
 
-四种条件：不注入 / 注入 K 的当前值 / 注入 K 的过时值 / 注入无关记录 R。第 1–7 轮都不注入。每条件 50 个 session，持久模式。另外用一次性模式各跑 20 个作参照（H4 的早期信号，便宜）。
+四种条件：不注入 / 注入 K 的当前值 / 注入 K 的过时值 / 注入无关记录 R。第 1–7 轮都不注入。E0 的 session 从**训练用户**里抽（验证和测试用户留给后面），K 只从开局就带过时版本的会变 key 里选。每条件 50 个 session，持久模式。另外用一次性模式各跑 20 个作参照（H4 的早期信号，便宜）。
 
 **对照组怎么选（分析脚本里写死，并在 summary 里注明）**：
 
@@ -331,7 +331,7 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 
 ### 3.12 policies/
 
-- 统一接口 `Policy.act(obs: np.ndarray, info: dict) -> int`。`info` 里带候选元数据，只给 threshold 用（它要融合相似度原值）。
+- 统一接口 `Policy.act(obs: np.ndarray, info: dict) -> int`。`info` 里带候选元数据（threshold 要用融合分原值）和状态快照（摊销贪心要用它调行为模型的 `probs`）。学习类策略（LinUCB、DQN、PPO）只看 `obs`。
 - threshold：注入融合分 ≥ τ 的候选。τ 在验证用户上网格搜索（20 个分位点），每种模式单独调。
 - LinUCB：8 个动作各一个 `A = I·reg + Σxxᵀ`、`b`；用 Sherman–Morrison 更新逆矩阵；训练在模拟器上做（和 DQN 同样的 30 万步），评估时冻结。
 - sb3.py：DQN 和 PPO 的构造、训练、加载；每个 run 设 `torch.set_num_threads(1)`，用多进程并行跑多个 run。
@@ -399,7 +399,7 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 | C5 | 策略可能学会"新旧都提"来骗分 | 记录 `hedged`；报告里给出各方法的 hedged 比例；如果某方法明显偏高，加一个小惩罚项做敏感性分析 |
 | C6 | 用户自己刚说的值被模型复述，被算成无关提及 | 排除本轮用户输入里出现的值（§3.6） |
 | C7 | 更新轮模型复述新值 | 新值属于 target_key，本来就排除 |
-| C8 | 相关记录被提到也计数，导致下次被当作"被提及很多次"而惩罚加重 | n_m 只在无关提及时增加 |
+| C8 | 相关记录被提到也计数，导致下次被当作"被提及很多次"而惩罚加重 | 状态里分开存两个计数：`mentions`（全部提及，给特征和行为模型用）和 `intrusions`（只数无关提及，就是奖励里的 n_m） |
 | C9 | 模型提到一条从未注入、但用户早先在对话里说过的值 | 算无关提及（是模型主动提的），但在 mentions 里标来源 "history"，行为模型用这个特征 |
 
 ### D. 检索
@@ -422,7 +422,7 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 | E3 | SB3 DQN 默认 `learning_starts` 太小，早期噪声大 | 设 `learning_starts=5000` |
 | E4 | 不同 γ 的回报不可比 | 评估一律报不折扣总回报（§1.6） |
 | E5 | 只给 γ=0.9 调参，其他 γ 吃亏 | 原文档已规定：只调一次、所有 γ 沿用；报告里说明 |
-| E6 | DQN γ=0 和 LinUCB 的差别不只是 γ，还有探索方式和模型容量 | **主结论只基于两组对比**：DP 对贪心（同一模型，无学习误差）、DQN γ=0.9 对 DQN γ=0（同网络、同数据、同调参，只差 γ）。LinUCB 和风险敏感 bandit 只作为"已有方法的代表"放进表 1，不用来论证长期规划的价值（见 §3.13） |
+| E6 | DQN γ=0 和 LinUCB 的差别不只是 γ，还有探索方式和模型容量 | 主结论只用 §3.13 的 `PRIMARY_CONTRASTS`（DP 对贪心、DP 对摊销贪心、DQN γ=0.9 对 γ=0 等）。LinUCB 和风险敏感 bandit 只作为"已有方法的代表"放进表 1，不用来论证长期规划的价值 |
 | E7 | VecEnv 里 8 个环境用同一个 seed，生成相同的脚本序列 | 每个子环境 seed = base_seed × 100 + i |
 | E8 | 观测里泄漏了生成器标注（superseded_by、relevant_ids） | features.py 不接收这些字段（函数签名就拿不到）；测试里随机改这些字段，观测必须不变 |
 | E9 | 观测越界或 NaN（除以 0） | 归一化分母都有下限；`_obs` 里 clip + assert |
@@ -441,6 +441,7 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 | F4 | "用了旧值"样本很少，逻辑回归校准差 | 看校准曲线；必要时合并稀疏特征或加交互项；梯度提升树对照（原文档已要求） |
 | F5 | 提及事件独立性假设不成立（模型一次提到多条） | 统计日志里每轮多条提及的联合频率，和独立假设下的期望比较；偏差大就加"上下文 memory 数"交互项 |
 | F6 | 一次性模式下的影响只通过模型自己的旧回答传递，特征里没有 | 提及模型特征里有"此前被模型提及过、且仍在历史里" |
+| F8 | 日志全是 12 轮的话，模拟器在 E3 扫到 20 轮时要外推到没见过的轮次和"注入后经过的轮数" | 日志收集用混合长度（§1.4）；E3 完整规模只扫到日志里出现过的最大 T。代价：平均长度从 12 变成 14，真实调用的 token 增加约 20–30%（历史更长），E0 后按实测重估预算 |
 | F7 | 模拟器在训练用户上拟合，测试用户的分布不同 | 用户之间结构相同（同一生成器），差异只在具体值；在验证用户的日志上检查（收集日志时额外跑 200 个验证用户 session，只用于这个检查） |
 
 ### G. DP 与小实例
@@ -459,7 +460,7 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 | --- | --- | --- |
 | H1 | 不同方法在不同 session 上评估，差值噪声大 | 全部方法用同一组 2,000 个测试脚本；配对差值 |
 | H2 | 真实 LLM 评估时，同一脚本在不同方法下的回答随机性不配对 | 接受；E6 每方法 300 session，报告置信区间；排序一致性用 Spearman |
-| H3 | 多次比较（很多方法 × 很多设置） | 主结论只基于预先写定的几组比较（H1–H4）；其他标为探索性 |
+| H3 | 多次比较（很多方法 × 很多设置） | 主结论只基于预先写定的 `PRIMARY_CONTRASTS`（§3.13）；其他标为探索性 |
 | H4 | 阈值方法在测试集上调参 | τ 只在验证用户上调 |
 | H5 | 一个配置文件展开成很多 run，某个 run 失败后不知道 | `train.py --sweep` 结束时打印每个 run 的状态表；失败的写进 `runs/_failed.txt` |
 
@@ -508,7 +509,7 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 | `test_runner.py` | 用 FakeLLM 跑 10 个 session：日志行数、字段齐全；模拟一次失败 session 被丢弃；断点续跑跳过已完成 |
 | `test_llm_cache.py` | 相同 (messages, session, turn) 命中；不同 session 不命中 |
 | `test_behavior_model.py` | 在合成日志上拟合能恢复已知的概率方向；日志路径与模拟路径特征一致 |
-| `test_dp.py` | 原文档"必须成立的关系"全部 5 条（第 4 条在小实例上用短训练近似，标 `@pytest.mark.slow`）；另加：V^DP ≥ V^amortized-greedy；一次性模式下摊销贪心与贪心的动作完全相同；四个分项价值之和等于总价值；R_behavior 下若提及概率与历史无关则 Δ = 0 |
+| `test_dp.py` | 原文档"必须成立的关系"全部 5 条（第 4 条在小实例上用短训练近似，标 `@pytest.mark.slow`）；另加：V^DP ≥ V^amortized-greedy；一次性模式下摊销贪心与贪心的动作完全相同；四个分项价值之和等于总价值；R_behavior 下若行为模型的全部概率（回答结果和提及）都与历史无关，则 Δ = 0 |
 
 ---
 
@@ -545,7 +546,7 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 | R4 | 人工标注 200 条（E0 + 日志） | R2、R3 | 打分器一致率 |
 | R5 | `fit_sim.py` | R3 | `runs/sim/` |
 | R6 | `solve_dp.py --reward R_full R_notok R_behavior`（每个变体都算 DP、贪心、摊销贪心，并输出分项价值） | R5 | `runs/e3/` |
-| R7 | `train.py --sweep e2/e1/e4/e5` | R5 | `runs/...` |
+| R7 | `train.py --sweep e2/e1/e4/e5/e3_full`。E3 完整规模：T ∈ {4, 8, 12, 16, 20}（p_stale = 0.5）加 p_stale ∈ {0, 0.2, 0.4, 0.6}（T = 12），γ ∈ {0, 0.9}，3 个种子，共约 48 个 run | R5 | `runs/...` |
 | R8 | `evaluate.py --backend sim` | R7 | `results/sim_eval.parquet` |
 | R9 | `evaluate.py --backend live` | R7 | `results/live_eval.parquet` |
 | R10 | `make_figures.py` | 全部 | `figures/` |
