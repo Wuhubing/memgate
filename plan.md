@@ -254,6 +254,7 @@ def build_messages(history, turn, chosen, mode) -> list[dict]:
 | M10 | 用户的更新消息在两种模式下都**留在历史里**，所以模型可以从对话本身知道新值 | 真实情况就是"memory 说旧值、对话里说过新值"的冲突；行为模型里有"用户是否在本 session 说过新值"这个特征 |
 | M11 | 模型只生成文字回答：没有工具调用，也不能自己写 memory | harness 保持在 300–500 行 |
 | M12 | token 成本只算 memory 条目本身的 token，`<memory>` 标签和换行忽略 | 每轮常数，不影响决策 |
+| M13 | **跨 session 的范围**：之前 session 写进 store 的记录（包括已过时的旧版本）在本 session 被检索和注入，这在范围内，store 里的历史版本就是这样来的。本 session 的门控决策影响之后的 session，这**不在范围内**：门控只决定"读什么"，不决定"写什么"（M1），而且每个 session 从初始 store 开始（M9），所以一个 session 里的决策传不到下一个 session | episode = 一个 session，MDP 定义干净；跨 session 的长期影响需要控制器同时管写入、时域变成多个 session，是另一个问题，放进报告的"未来工作" |
 
 ### 3.6 harness/scorer.py
 
