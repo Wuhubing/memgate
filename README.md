@@ -22,7 +22,7 @@ API key 只放在本地 `.env` 或 shell 环境变量里，代码只读环境变
 
 ## 预算
 
-`configs/llm.yaml` 里 `budget_cny: 60`。每次真实调用的花费按响应里的缓存命中 / 未命中 / 输出 token 记进 `cache/llm_cache.sqlite` 的 spend 表，跨所有脚本累计；到 60 元时 runner 停下（已完成的 session 都保存了，提高上限后重跑同一命令会从断点继续）。`offpeak_only: true` 时高峰时段（北京时间工作日 8–12、14–18、19–22 点）自动等待。价格来自第三方文章，第一次真实调用前请在 DeepSeek 控制台核对一次。
+`configs/llm.yaml` 里 `budget_cny: 60`。每次真实调用的花费按响应里的缓存命中 / 未命中 / 输出 token 记进 `cache/llm_cache.sqlite` 的 spend 表，跨所有脚本累计；到 60 元时 runner 停下（已完成的 session 都保存了，提高上限后重跑同一命令会从断点继续）。默认 `offpeak_only: false`：任何时段都直接发请求，高峰时段（北京时间工作日 8–12、14–18、19–22 点）按 2 倍价格计入预算；改成 true 则高峰时段自动等待。价格来自第三方文章，第一次真实调用前请在 DeepSeek 控制台核对一次。
 
 所有真实回答都缓存在同一个 sqlite 里，重跑任何脚本都不会重复花钱。
 
