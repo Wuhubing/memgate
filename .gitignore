@@ -1,0 +1,34 @@
+# 密钥：绝不提交
+.env
+.env.*
+!.env.example
+*.key
+*api_key*
+*apikey*
+
+# 数据与实验产出（体积大、可由脚本复现）
+data/
+runs/
+results/
+figures/*.png
+*.parquet
+*.sqlite
+*.db
+cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# 编辑器与系统
+.DS_Store
+.idea/
+.vscode/
