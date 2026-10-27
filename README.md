@@ -26,6 +26,17 @@ API key 只放在本地 `.env` 或 shell 环境变量里，代码只读环境变
 
 所有真实回答都缓存在同一个 sqlite 里，重跑任何脚本都不会重复花钱。
 
+## 一键跑完（后台）
+
+E0 之后的全部步骤可以一条命令跑完，适合交给 Claude Code 或放在后台：
+
+```bash
+WORKERS=6 nohup bash scripts/run_all.sh &      # WORKERS = 并行训练进程数，按内存调（每个约 1–1.5 GB）
+tail -f results/pipeline.log                   # 看进度
+```
+
+每一步完成后在 `results/.done/` 里留一个标记，中断后重跑同一条命令会从断点继续；`--from r7` 会从某一步重新做。最后结果在 `figures/summary.json`。
+
 ## 运行顺序（plan §6.2，R1–R10）
 
 在 Mac 上按顺序执行。每一步都可以中断后重跑；先加 `--fake` 可以用离线的 FakeLLM 把整条流水线走一遍（数字没有意义，只检查能跑通）。

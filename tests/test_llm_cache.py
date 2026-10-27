@@ -86,7 +86,7 @@ def client_with(cfg, monkeypatch, replies):
             raise r
         return r
 
-    c.client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    c._make_client = lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     return c, calls
 
 
@@ -154,3 +154,16 @@ async def test_rate_limit_halves_concurrency(cfg, monkeypatch):
 
 async def _no_sleep(*a, **k):
     return None
+
+
+def test_client_rebuilt_per_event_loop(cfg, monkeypatch):
+    """run_pilot calls asyncio.run once per condition; every loop must get its own HTTP client."""
+    import asyncio
+    c, calls = client_with(cfg, monkeypatch, [fake_completion(), fake_completion()])
+    made = []
+    orig = c._make_client
+    c._make_client = lambda: made.append(1) or orig()
+    asyncio.run(c.chat(MSGS, session_id="a", turn_idx=0))
+    first = c.client
+    asyncio.run(c.chat(MSGS, session_id="b", turn_idx=0))
+    assert len(made) == 2 and c.client is not first and len(calls) == 2

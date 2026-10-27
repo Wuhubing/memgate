@@ -109,19 +109,35 @@ class DeepSeekClient:
         key = os.environ.get(cfg.api_key_env)
         if not key:
             raise FatalLLMError(f"environment variable {cfg.api_key_env} is not set (put it in .env)")
-        from openai import AsyncOpenAI
         self.cfg = cfg
-        self.client = AsyncOpenAI(base_url=cfg.base_url, api_key=key, timeout=cfg.timeout_s, max_retries=0)
+        self._key = key
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self.client = None
+        self.sem: asyncio.Semaphore | None = None
         self.cache = ResponseCache(cfg.cache_path)
         self.usage = Usage()
-        self.sem = asyncio.Semaphore(cfg.concurrency)
         self.limit = cfg.concurrency
         self._shrinking = False
         self.dry_budget = dry_budget
 
+    def _make_client(self):
+        from openai import AsyncOpenAI
+        return AsyncOpenAI(base_url=self.cfg.base_url, api_key=self._key, timeout=self.cfg.timeout_s, max_retries=0)
+
+    def _bind_loop(self) -> None:
+        """The HTTP connection pool and the semaphore belong to one event loop. Scripts that call
+        asyncio.run several times (run_pilot: one per condition) get a fresh pair per loop; reusing
+        the old pool raised 'Event loop is closed' on the first calls of every later loop."""
+        loop = asyncio.get_running_loop()
+        if loop is not self._loop:
+            self._loop = loop
+            self.client = self._make_client()
+            self.sem = asyncio.Semaphore(self.limit)
+
     async def chat(self, messages: list[dict], *, session_id: str, turn_idx: int, sample_idx: int = 0,
                    meta: dict | None = None) -> LLMResponse:
         cfg = self.cfg
+        self._bind_loop()
         key = cache_key(cfg.model, messages, cfg.temperature, cfg.top_p, cfg.max_tokens, session_id, turn_idx,
                         sample_idx)
         hit = self.cache.get(key)
