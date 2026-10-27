@@ -1,0 +1,17 @@
+# E5 / H4: E1 + E2 again with one-time (ephemeral) injection
+name: e5_ephemeral
+world: data/world_s0
+sim: runs/sim
+defaults: {mode: ephemeral, reward: R_full, steps: 300000, T_choices: [12], mask_history: false, n_envs: 8}
+grid:
+  method: [dqn]
+  gamma: [0.0, 0.3, 0.6, 0.9, 1.0]
+  seed: [0, 1, 2, 3, 4]
+extra:
+  - {method: linucb, seed: 0}
+  - {method: linucb_risk, seed: 0}
+  - {method: threshold}
+  - {method: always}
+  - {method: never}
+  - {method: model_greedy}
+  - {method: amortized_greedy}

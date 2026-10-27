@@ -1,0 +1,12 @@
+# E3 at full scale: DQN gamma 0.9 - gamma 0 as a function of T (p_stale = 0.5 world).
+# The p_stale sweep at T = 12 uses worlds generated with --p-stale (see README run order);
+# copy this file per world and change `world` and `name`.
+name: e3_full_T
+world: data/world_s0
+sim: runs/sim
+defaults: {mode: persistent, reward: R_full, steps: 300000, mask_history: false, n_envs: 8}
+grid:
+  method: [dqn]
+  gamma: [0.0, 0.9]
+  T_choices: [[4], [8], [12], [16], [20]]
+  seed: [0, 1, 2]

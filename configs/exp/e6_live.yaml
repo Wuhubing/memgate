@@ -1,0 +1,16 @@
+# E6 / R9: real-LLM check of the method ranking (plan H2, J3, J7). Best seed per method by val_return;
+# the same first n_sessions test scripts for every method.
+name: e6_live
+runs: [runs/e1_main, runs/e2_gamma]
+mode: persistent
+reward: R_full
+n_sessions: 300
+select:
+  - {method: always}
+  - {method: never}
+  - {method: threshold}
+  - {method: linucb}
+  - {method: model_greedy}
+  - {method: amortized_greedy}
+  - {method: dqn, gamma: 0.0, mask_history: false}
+  - {method: dqn, gamma: 0.9, mask_history: false}

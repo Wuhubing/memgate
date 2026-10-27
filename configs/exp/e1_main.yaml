@@ -1,0 +1,25 @@
+# E1: every method in the default setting. DQN gamma in {0, 0.9} comes from e2_gamma.
+name: e1_main
+world: data/world_s0
+sim: runs/sim
+defaults: {mode: persistent, reward: R_full, steps: 300000, T_choices: [12], mask_history: false, n_envs: 8}
+grid:
+  method: [ppo]
+  gamma: [0.9, 1.0]
+  seed: [0, 1, 2, 3, 4]
+extra:
+  - {method: linucb, seed: 0}
+  - {method: linucb, seed: 1}
+  - {method: linucb, seed: 2}
+  - {method: linucb, seed: 3}
+  - {method: linucb, seed: 4}
+  - {method: linucb_risk, seed: 0}
+  - {method: linucb_risk, seed: 1}
+  - {method: linucb_risk, seed: 2}
+  - {method: linucb_risk, seed: 3}
+  - {method: linucb_risk, seed: 4}
+  - {method: threshold}
+  - {method: always}
+  - {method: never}
+  - {method: model_greedy}
+  - {method: amortized_greedy}
