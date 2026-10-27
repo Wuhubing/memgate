@@ -160,7 +160,11 @@ async def run_sessions(scripts: list[SessionScript], make_chooser: Callable[[Ses
                       f"{u.completion_tokens} out tokens, {u.cost_cny:.2f} CNY, cache hit {hit:.0%}, "
                       f"{time.monotonic() - t0:.0f}s", flush=True)
 
-    await asyncio.gather(*(one(s) for s in todo))
+    try:
+        await asyncio.gather(*(one(s) for s in todo))
+    finally:
+        if hasattr(llm, "aclose"):
+            await llm.aclose()
     writer.flush()
     fail_log.close()
     if fatal:

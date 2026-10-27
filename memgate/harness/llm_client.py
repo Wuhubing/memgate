@@ -134,6 +134,13 @@ class DeepSeekClient:
             self.client = self._make_client()
             self.sem = asyncio.Semaphore(self.limit)
 
+    async def aclose(self) -> None:
+        """Close the connection pool inside the loop that owns it. Left to the garbage collector,
+        the pool's close runs after asyncio.run has shut the loop and logs 'Event loop is closed'."""
+        if self.client is not None and self._loop is asyncio.get_running_loop():
+            await self.client.close()
+        self.client, self._loop = None, None
+
     async def chat(self, messages: list[dict], *, session_id: str, turn_idx: int, sample_idx: int = 0,
                    meta: dict | None = None) -> LLMResponse:
         cfg = self.cfg

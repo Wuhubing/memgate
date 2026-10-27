@@ -167,3 +167,24 @@ def test_client_rebuilt_per_event_loop(cfg, monkeypatch):
     first = c.client
     asyncio.run(c.chat(MSGS, session_id="b", turn_idx=0))
     assert len(made) == 2 and c.client is not first and len(calls) == 2
+
+
+def test_aclose_closes_in_owning_loop(cfg, monkeypatch):
+    import asyncio
+    c, calls = client_with(cfg, monkeypatch, [fake_completion(), fake_completion()])
+    closed = []
+    make = c._make_client
+
+    def make_closable():
+        cl = make()
+        cl.close = lambda: closed.append(asyncio.get_running_loop()) or asyncio.sleep(0)
+        return cl
+    c._make_client = make_closable
+
+    async def run(turn):
+        await c.chat(MSGS, session_id="s", turn_idx=turn)
+        loop = asyncio.get_running_loop()
+        await c.aclose()
+        return loop
+    loops = [asyncio.run(run(10)), asyncio.run(run(11))]
+    assert closed == loops and c.client is None and len(calls) == 2
