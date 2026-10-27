@@ -65,7 +65,7 @@ concurrency: 8
 system_prompt_version: v1           # v1 = 带"只在相关时使用"；v2 = 去掉这句（G0 不过时用）
 cache_path: cache/llm_cache.sqlite
 budget_cny: 60                      # 累计花费上限（跨所有运行，记在缓存库的 spend 表里）
-offpeak_only: true                  # 只在优惠时段发请求，高峰时段自动等待
+offpeak_only: false                 # 不等优惠时段，直接跑（高峰 2 倍价格照样计入预算）
 ```
 
 ### 1.4 规模（configs/world.yaml）

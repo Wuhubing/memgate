@@ -25,4 +25,4 @@ price:
   peak_multiplier: 2.0
   # Beijing time (UTC+8), weekdays; union of the two published schedules we found
   peak_hours: [[8, 12], [14, 18], [19, 22]]
-offpeak_only: true                   # runner waits for off-peak instead of paying 2x
+offpeak_only: false                  # user decision 2026-10-27: never wait for off-peak (peak calls cost 2x)
