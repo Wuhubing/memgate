@@ -2,7 +2,9 @@
 
 在 LLM 固定不动的 agent harness 里训练一个 memory 准入控制器：每一轮决定哪些 memory 进入模型输入，目标是整个 session 的累计回报。核心问题是这个决策能否当作 bandit，还是必须当作 MDP 做长期规划。
 
-- 执行计划：[plan.md](plan.md)
+- 执行计划：[plan.md](plan.md)（以下两份原文档的增量与规格）
+- 项目文档：[docs/项目文档.md](docs/项目文档.md)
+- 工程实现文档：[docs/工程实现文档.md](docs/工程实现文档.md)
 - LLM：DeepSeek API（OpenAI 兼容接口），通过 `openai` SDK 调用
 
 ## 快速开始
