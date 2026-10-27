@@ -1,0 +1,9 @@
+# E4 / H3: same DQN without the injection-history features
+name: e4_ablation
+world: data/world_s0
+sim: runs/sim
+defaults: {mode: persistent, reward: R_full, steps: 300000, T_choices: [12], mask_history: true, n_envs: 8}
+grid:
+  method: [dqn]
+  gamma: [0.9]
+  seed: [0, 1, 2, 3, 4]

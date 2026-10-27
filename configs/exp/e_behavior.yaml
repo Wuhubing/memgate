@@ -1,0 +1,15 @@
+# Core-thesis runs (plan §3.13 contrast 4): DQN gamma 0 vs 0.9 under R_behavior (lambda=0, beta=1),
+# both injection modes. Must not be cut (J4).
+name: e_behavior
+world: data/world_s0
+sim: runs/sim
+defaults: {reward: R_behavior, steps: 300000, T_choices: [12], mask_history: false, n_envs: 8}
+grid:
+  method: [dqn]
+  mode: [persistent, ephemeral]
+  gamma: [0.0, 0.9]
+  seed: [0, 1, 2, 3, 4]
+extra:
+  - {method: model_greedy, mode: persistent}
+  - {method: amortized_greedy, mode: persistent}
+  - {method: model_greedy, mode: ephemeral}

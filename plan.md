@@ -40,7 +40,7 @@
 
 | 编号 | 原文档 | 本文决定 | 原因 |
 | --- | --- | --- | --- |
-| D1 | 自部署 Qwen3-8B 或托管 API | DeepSeek API，`deepseek-chat`（非思考模式） | 用户决定 |
+| D1 | 自部署 Qwen3-8B 或托管 API | DeepSeek API，`deepseek-flash`（V4.1-Flash，显式关闭思考模式） | 用户决定；2026-10-27 查过文档：`deepseek-chat` 已不在模型列表，思考模式默认开启，要在请求里传 `thinking: {type: disabled}` |
 | D2 | 一次性模式把 memory 加在 system prompt 末尾 | 一次性模式把 memory 拼在**当前 user 消息前面**（和持久模式同一个位置），下一轮从历史里删掉 | ① 放在 system prompt 会让每轮的第一条消息都变，DeepSeek 的前缀缓存完全失效，成本翻几倍；② 两种模式只差"是否留在历史里"这一个变量，H4 的对照更干净 |
 | D3 | 调用时传 seed | 不依赖 seed；复现靠本地 SQLite 响应缓存 | DeepSeek 不保证 seed 生效 |
 | D4 | 并发信号量 32 | 默认 8，E0 时按实测调 | 托管 API 的限流与排队行为未知 |
@@ -53,16 +53,19 @@
 
 ```yaml
 base_url: https://api.deepseek.com
-model: deepseek-chat
+model: deepseek-flash               # 2026-10-27 的非思考对话模型
+disable_thinking: true              # 请求带 extra_body={"thinking": {"type": "disabled"}}
 api_key_env: DEEPSEEK_API_KEY       # 只写变量名，不写 key
 temperature: 0.7                    # 见问题 A6：DeepSeek 的温度语义要在 E0 实测
-top_p: 0.95
+top_p: 1.0                          # 非思考模式下 top_p 固定为 1.0
 max_tokens: 160
 timeout_s: 120
 max_retries: 5
 concurrency: 8
 system_prompt_version: v1           # v1 = 带"只在相关时使用"；v2 = 去掉这句（G0 不过时用）
 cache_path: cache/llm_cache.sqlite
+budget_cny: 60                      # 累计花费上限（跨所有运行，记在缓存库的 spend 表里）
+offpeak_only: true                  # 只在优惠时段发请求，高峰时段自动等待
 ```
 
 ### 1.4 规模（configs/world.yaml）
@@ -216,7 +219,7 @@ live 后端：LLM 回答 → 打分器 → Outcome。sim 后端：行为模型�
 - 可重试：超时、连接错误、429、500、502、503；不可重试：400、401、402（余额不足）、422，直接抛出并让整个 runner 停下（余额不足时继续跑只会丢一堆 session）。
 - 缓存 key = sha256(model, messages 的规范 JSON, temperature, top_p, max_tokens, session_id, turn_idx, sample_idx)。**必须包含 session_id 和轮次**，否则两个 session 走到完全相同的消息时会拿到同一个缓存回答，破坏随机性。
 - 返回 `LLMResponse(text, model, system_fingerprint, prompt_tokens, completion_tokens, cache_hit, cache_miss, finish_reason, latency_s)`。
-- 记录每次调用的 usage 到一个累计计数器；超过 `budget_usd` 配置就停下。
+- 记录每次调用的 usage 到一个累计计数器；超过 `budget_cny`（60 元）就停下；花费按响应里的缓存命中 / 未命中 / 输出 token 和价格表算。
 
 ### 3.5 harness/prompt.py
 
@@ -360,8 +363,8 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 
 | # | 问题 | 处理 |
 | --- | --- | --- |
-| A1 | `deepseek-chat` 是别名，官方升级时底层模型会变，前后两批数据不可比 | 每次调用记录 `model` 和 `system_fingerprint`；日志收集和 E6 之前各检查一次；变了就在报告局限性里写明，必要时重收日志 |
-| A2 | 误用 `deepseek-reasoner`：输出带思考过程、慢、贵、打分被思考文本干扰 | 配置里写死 `deepseek-chat`；client 启动时断言模型名不含 `reasoner` |
+| A1 | `deepseek-flash` 是别名，官方升级时底层模型会变，前后两批数据不可比 | 每次调用记录 `model` 和 `system_fingerprint`；日志收集和 E6 之前各检查一次；变了就在报告局限性里写明，必要时重收日志 |
+| A2 | 误用 `deepseek-reasoner`：输出带思考过程、慢、贵、打分被思考文本干扰 | 配置里写死 `deepseek-flash` 并关闭思考；client 启动时断言模型名不含 `reasoner`，响应里出现 reasoning token 就整批停下 |
 | A3 | seed 不生效，同样的请求结果不同 | 不依赖 seed（D3）；复现靠缓存 |
 | A4 | 高峰期排队，请求挂很久才返回或断开 | `timeout_s=120`；超时可重试；runner 记录 latency，持续变慢就降并发；大批量放在国内夜间跑 |
 | A5 | 429 / 503 | 指数退避重试；连续失败率 > 5% 时 runner 自动把并发减半 |
@@ -370,7 +373,7 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 | A8 | 回答为空、`finish_reason="length"` 被截断、或触发内容过滤 | 空回答重试一次，仍为空就记为 neither 并标记；截断照常打分（80 词要求通常不会超 160 token），统计截断率，> 2% 时把 max_tokens 调到 200 |
 | A9 | 前缀缓存不命中，成本远超预算 | D2 保证前缀稳定；日志记 `prompt_cache_hit_tokens`；E0 后算实际命中率，低于 50% 先排查消息拼装再继续 |
 | A10 | 一次性模式下"删掉历史里的 memory 块"本身会让前缀变化 | 因为删的是上一轮 user 消息里的块，从那一条起的前缀会变：每轮只有最近一对消息不能命中，影响很小；接受 |
-| A11 | 价格和优惠时段会变 | 开工前查价格页，写进 `llm.yaml` 注释；`budget_usd` 设上限 |
+| A11 | 价格和优惠时段会变 | 开工前查价格页，写进 `llm.yaml` 注释；`budget_cny` 设上限 |
 | A12 | key 泄露 | 只从环境变量读；`.env` 在 `.gitignore`；缓存和日志里不写请求头；提交前 grep `sk-` |
 | A13 | 回答用中文或 Markdown（加粗、列表） | system prompt 和对话全英文；打分前 normalize 会去掉 Markdown 符号；统计非英文回答比例 |
 | A14 | 模型在提问轮反问（"Which project do you mean?"）而不是回答 | 记为 neither；问句模板里总是写明实体名，减少歧义 |
@@ -574,6 +577,6 @@ E0 用固定结构的 8 轮 session，每个 session 只针对一个目标 key K
 ## 8. 写代码之前还要确认的事
 
 1. **DeepSeek 文档**：当前的 temperature 说明（A6）、usage 里缓存字段的名字（A9）、价格和优惠时段（A11）。
-2. **预算上限**：`budget_usd` 设多少。
+2. ~~预算上限~~：已定，60 元，完整规模（每种模式 1500 个日志 session，E6 每方法 300 个 session）。
 3. **课程要求**：proposal 和最终报告的格式、页数是否和原文档一致。（托管 API 已确认可以用：课程 guideline 写的是 "You are free to use existing software and packages"。）
 4. **§1.2 的 8 条改动**和 **§1.4、§1.5 的规模与定义**：没有异议就按这里写。

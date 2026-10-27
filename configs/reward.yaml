@@ -1,0 +1,5 @@
+default: R_full
+variants:
+  R_full:     {delta: 1.0, alpha: 0.3, beta: 1.5, lam: 0.002}
+  R_notok:    {delta: 1.0, alpha: 0.3, beta: 1.5, lam: 0.0}
+  R_behavior: {delta: 1.0, alpha: 0.3, beta: 1.0, lam: 0.0}

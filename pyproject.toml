@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memgate"
+version = "0.1.0"
+description = "Long-horizon memory gating for LLM agent harnesses"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "scipy",
+  "scikit-learn",
+  "gymnasium>=0.29,<1.1",
+  "stable-baselines3>=2.3",
+  "torch",
+  "openai>=1.40",
+  "python-dotenv",
+  "pydantic>=2",
+  "pyyaml",
+  "rank-bm25",
+  "tiktoken",
+  "matplotlib",
+  "tqdm",
+]
+
+[project.optional-dependencies]
+embed = ["sentence-transformers"]
+dev = ["pytest", "pytest-asyncio", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["memgate*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: long-running checks (deselect with -m 'not slow')"]
+addopts = "-m 'not slow'"
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501", "E702", "E741"]

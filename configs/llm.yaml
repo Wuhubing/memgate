@@ -1,0 +1,28 @@
+# DeepSeek, OpenAI-compatible. Checked 2026-10-27 against api-docs.deepseek.com:
+# - model id is `deepseek-flash` (served by DeepSeek-V4.1-Flash-1017); `deepseek-chat` is no longer listed
+# - thinking is ON by default, so we always send thinking={"type": "disabled"}
+# - in non-thinking mode top_p is fixed at 1.0 (the value we send is ignored)
+base_url: https://api.deepseek.com
+model: deepseek-flash
+api_key_env: DEEPSEEK_API_KEY        # variable name only; the key itself lives in .env
+disable_thinking: true
+temperature: 0.7                     # problem A6: check the variance in E0
+top_p: 1.0
+max_tokens: 160
+timeout_s: 120
+max_retries: 5
+concurrency: 8
+system_prompt_version: v1            # v1 = "use a note only if relevant"; v2 = without it (G0 fallback)
+cache_path: cache/llm_cache.sqlite
+
+# Budget. Prices are CNY per 1M tokens, off-peak, from a third-party article (2026-10-21);
+# confirm against the DeepSeek console before the first real run.
+budget_cny: 60.0
+price:
+  input_cache_hit: 0.02
+  input_cache_miss: 1.0
+  output: 4.0
+  peak_multiplier: 2.0
+  # Beijing time (UTC+8), weekdays; union of the two published schedules we found
+  peak_hours: [[8, 12], [14, 18], [19, 22]]
+offpeak_only: true                   # runner waits for off-peak instead of paying 2x

@@ -1,0 +1,18 @@
+seed: 0
+n_users: 100
+split: {train: 60, val: 20, test: 20}
+n_changing: 6          # 3 projects x {deadline, point of contact}
+n_preference: 4
+n_trivia: 4
+p_stale: 0.5           # share of changing keys that start with >= 1 old version (plan §1.5)
+max_old_versions: 3
+spare_values: 12       # per changing key: unused values for in-session updates
+T_default: 12
+p_kind: {query: 0.40, chat: 0.45, update: 0.15}
+p_chat_topic: 0.5
+zipf_a: 1.0
+scripts_per_val_user: 50
+scripts_per_test_user: 100
+log_scripts: 3000
+log_T_choices: [8, 12, 16, 20]
+embedder: minilm        # minilm (sentence-transformers) | hash (offline fallback, tests only)
